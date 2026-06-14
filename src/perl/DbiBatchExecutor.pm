@@ -73,8 +73,34 @@ sub periodicallyExecuteBatch {
     for (my $i=0; $i<scalar(@arrayRefs); $i++) {
       $sth->bind_param_array($i+1, @arrayRefs[$i], $paramTypes->[$i]);
     }
+
+    # Temporarily disable RaiseError so execute_array populates ArrayTupleStatus
+    my $old_raise_error = $dbh->{RaiseError};
+    $dbh->{RaiseError} = 0;
+    $sth->{RaiseError} = 0;
+
     my $executeCount = $sth->execute_array({ ArrayTupleStatus => \my @tuple_status });
-    die "Failed executing row number $self->{rowNum}\n" unless $executeCount;
+
+    # Restore RaiseError
+    $dbh->{RaiseError} = $old_raise_error;
+
+    # Check for errors - report only the first/causative error
+    for (my $i = 0; $i < @tuple_status; $i++) {
+      my $status = $tuple_status[$i];
+      if (ref($status) eq 'ARRAY') {
+        # Found the first error that caused transaction abort
+        my ($err_code, $err_string) = @$status;
+        my $absoluteRow = $self->{rowNum} - $self->{batchCount} + $i + 1;
+        my @rowValues;
+        for my $arrayRef (@arrayRefs) {
+          push @rowValues, defined($arrayRef->[$i]) ? $arrayRef->[$i] : 'NULL';
+        }
+        die sprintf("Batch execution failed at row %d:\n[Error %s] %s\nData values: [%s]\n",
+                    $absoluteRow, $err_code // 'unknown', $err_string // 'unknown error',
+                    join(", ", @rowValues));
+      }
+    }
+
     $self->{batchCount} = 0;
     for my $arrayRef (@arrayRefs) {  # empty the provided arrays
       @$arrayRef = ();

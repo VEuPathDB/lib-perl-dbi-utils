@@ -6,7 +6,11 @@ use DBI qw(:sql_types);
 
 =pod
 
-A class that makes it easy to call DBI's execute_array to do batch inserts or updates
+A class that makes it easy to do batch inserts or updates.
+
+For Oracle it uses execute_array()
+
+For Postgres it manually does the updates. PG driver does not support execute_array()
 
 batchSize:  how many rows will be included in the array that is submitted
 commitSize: how many rows will be included in a commit
@@ -129,6 +133,7 @@ sub periodicallyExecuteBatchOracle {
   }
 }
 
+# DBD::Pg does not support execute_array (ie, it resolves it into individual executions, not batch)
 sub periodicallyExecuteBatchPostgres {
   my ($self, $dbh, $sth, $finalBatch, $paramTypes, @arrayRefs) = @_;
 

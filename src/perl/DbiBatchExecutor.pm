@@ -73,6 +73,8 @@ $batchExecutor->periodicallyExecuteBatch($sth, 1, [SQL_INTEGER, SQL_VARCHAR], \@
 sub periodicallyExecuteBatch {
   my ($self, $dbh, $sth, $finalBatch, $paramTypes, @arrayRefs) = @_;
 
+  die "periodicallyExecuteBatch() called with \$dbh->{AutoCommit} enabled" if $dbh->{AutoCommit};
+
   my $platform = $self->{platform};
 
   if ($platform eq 'Oracle') {
@@ -145,7 +147,13 @@ sub periodicallyExecuteBatchPostgres {
 
   if ($self->{batchCount} == $self->{batchSize} || $finalBatch) {
     my $numRows = scalar(@{$arrayRefs[0]});
-    return unless $numRows > 0;  # nothing to insert
+
+    # if final batch has no rows (result set exact multiple of batch size), commit outstanding rows from earlier batch before returning
+    if ($numRows == 0) {
+      $dbh->commit();
+      $self->{commitCount} = 0;
+      return;
+    }
 
     # Get the original SQL from the prepared statement
     my $originalSql = $sth->{Statement};
